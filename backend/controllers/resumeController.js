@@ -85,9 +85,12 @@ export const getResumeById = async (req, res) => {
 
     res.status(200).json(resume);
   } catch (error) {
+    console.error("GET RESUME ERROR:", error);
+  
     res.status(500).json({
       message: "Failed to get resume",
       error: error.message,
+      stack: error.stack,
     });
   }
 };
@@ -130,9 +133,12 @@ export const updateResume = async (req, res) => {
     const savedResume = await resume.save();
     res.status(200).json(savedResume);
   } catch (error) {
+    console.error("UPDATE RESUME ERROR:", error);
+  
     res.status(500).json({
       message: "Failed to update resume",
       error: error.message,
+      stack: error.stack,
     });
   }
 };

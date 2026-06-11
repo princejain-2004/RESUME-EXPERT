@@ -22,20 +22,23 @@ import html2canvas from "html2canvas";
 // resixze observer hook
 
 const useResizeObserver = () => {
-    const [size, setSize] = useState({width: 0, height: 0})
-    const ref = useCallback((node) => {
-        if(node){
-            const resizeOberserver = new ResizeObserver((entries) => {
-                const {width, height} = entries[0].contentRect;
-                setSize({width, height});
-            })
+  const [size, setSize] = useState({ width: 0, height: 0 });
 
-            resizeOberserver.observe(node)
-        }
-    }, [])
+  const ref = useCallback((node) => {
+    if (!node) return;
 
-    return{ ...size, ref};
-}
+    const resizeObserver = new ResizeObserver((entries) => {
+      const { width, height } = entries[0].contentRect;
+      setSize({ width, height });
+    });
+
+    resizeObserver.observe(node);
+
+    return () => resizeObserver.disconnect();
+  }, []);
+
+  return { ...size, ref };
+};
 
 const EditResume = () => {
   const { resumeId } = useParams();
@@ -302,7 +305,7 @@ const EditResume = () => {
       case "contact-info":
         { const { email, phone } = resumeData.contactInfo
         if (!email.trim() || !/^\S+@\S+\.\S+$/.test(email)) errors.push("Valid email is required.")
-        if (!phone.trim() || !/^\d{10}$/.test(phone)) errors.push("Valid 10-digit phone number is required")
+        if (!phone.trim() || !/^[6-9]\d{9}$/.test(phone)) errors.push("Valid 10-digit phone number is required")
         break }
 
       case "work-experience":
@@ -344,10 +347,10 @@ const EditResume = () => {
         break
 
       case "additionalInfo":
-        if (resumeData.languages.length === 0 || !resumeData.languages[0].name?.trim()) {
+        if (resumeData.languages.length === 0 || !resumeData.languages?.[0]?.name?.trim()) {
           errors.push("At least one language is required")
         }
-        if (resumeData.interests.length === 0 || !resumeData.interests[0]?.trim()) {
+        if (resumeData.interests.length === 0 || !resumeData.interests?.[0]?.trim()) {
           errors.push("At least one interest is required")
         }
         break
@@ -561,7 +564,14 @@ const EditResume = () => {
 
   const fetchResumeDetailsById = async () => {
     try {
-      const response = await axiosInstance.get(API_PATHS.RESUME.GET_BY_ID(resumeId))
+      const response = await axiosInstance.get(
+        API_PATHS.RESUME.GET_BY_ID(resumeId)
+      );
+      
+      console.log(
+        "Response Data:",
+        JSON.stringify(response.data, null, 2)
+      );
 
       if (response.data && response.data.profileInfo) {
         const resumeInfo = response.data
@@ -579,11 +589,18 @@ const EditResume = () => {
           certifications: resumeInfo?.certifications || prevState?.certifications,
           languages: resumeInfo?.languages || prevState?.languages,
           interests: resumeInfo?.interests || prevState?.interests,
+          thumbnailLink: resumeInfo?.thumbnailLink || "",
         }))
       }
     } catch (error) {
-      console.error("Error fetching resume:", error)
-      toast.error("Failed to load resume data")
+      console.log("STATUS:", error.response?.status);
+    
+      console.log("FULL RESPONSE:");
+      console.log(JSON.stringify(error.response?.data, null, 2));
+    
+      console.log("ERROR:", error);
+    
+      toast.error("Failed to load resume data");
     }
   }
 
@@ -604,7 +621,7 @@ const EditResume = () => {
         logging: false,
       });
   
-      document.body.removeChild(fixedThumbnail);
+      fixedThumbnail?.parentNode?.removeChild(fixedThumbnail);
   
       let blob = await new Promise((resolve) =>
         canvas.toBlob(resolve, "image/png", 1.0)
@@ -616,11 +633,20 @@ const EditResume = () => {
       }
   
       const formData = new FormData();
-      formData.append("thumbnail", blob);
+      formData.append(
+        "thumbnail",
+        blob,
+        `thumbnail-${Date.now()}.png`
+      );
   
       const uploadResponse = await axiosInstance.put(
         API_PATHS.RESUME.UPLOAD_IMAGES(resumeId),
-        formData
+        formData,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        }
       );
   
       const { thumbnailLink } = uploadResponse.data;
@@ -630,8 +656,14 @@ const EditResume = () => {
       toast.success("Resume Updated Successfully");
       navigate("/dashboard");
     } catch (error) {
-      console.error("Error Uploading Images:", error);
-      toast.error(error?.response?.data?.message || error.message);
+      console.log("STATUS:", error.response?.status);
+      console.log("DATA:", error.response?.data);
+      console.log("MESSAGE:", error.response?.data?.message);
+      console.log("ERROR:", error.response?.data?.error);
+    
+      toast.error(
+        error?.response?.data?.message || error.message
+      );
     } finally {
       setIsLoading(false);
     }
@@ -713,10 +745,13 @@ const EditResume = () => {
   
       toast.success("Resume Updated Successfully ✅");
     } catch (err) {
-      console.error("Error updating resume:", err);
-      toast.error(err?.response?.data?.message || "Failed to update resume details");
-    } finally {
-      setIsLoading(false);
+      console.log("STATUS:", err.response?.status);
+      console.log("DATA:", err.response?.data);
+      console.log("ERROR:", err);
+    
+      toast.error(
+        err?.response?.data?.message || "Failed to update resume details"
+      );
     }
   };
   
@@ -747,7 +782,8 @@ const EditResume = () => {
       await html2pdf()
         .set({
           margin:       0,
-          filename:     `${resumeData.title.replace(/[^a-z0-9]/gi, "_")}.pdf`,
+          filename: `${(resumeData.title || "Resume")
+            .replace(/[^a-z0-9]/gi, "_")}.pdf`,
           image:        { type: "png", quality: 1.0 },
           html2canvas:  {
             scale:           2,
@@ -911,7 +947,7 @@ const EditResume = () => {
 
       {/* Model data here */}
       <Modal isOpen={openThemeSelector} onClose={() => setOpenThemeSelector(false)}
-      title="Change Title">
+      title="Change Theme">
         <div className={containerStyles.modalContent}>
             <ThemeSelector selectedTheme={resumeData?.template.theme}
             setSelectedTheme={updateTheme} onClose={()=> setOpenThemeSelector(false)} />
